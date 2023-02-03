@@ -63,7 +63,7 @@ library(knitr) #Makes nice tables
 library(kableExtra) #Makes even nicer tables
 library(lubridate) #Makes working with dates easier
 library(ggthemes) #Makes plots prettier
-library(tidyrr) #Makes multiple simultaneous models easier
+library(tidyr) #Makes multiple simultaneous models easier
 
 
 ```
@@ -78,7 +78,6 @@ The water quality portal can be accessed with the command `readWQPdata`, which t
 ## Download prep
 
 
-There is one grammatical error here!
 ```{r download prep}
 #First we'll make a tibble (a tidyverse table) with Site IDs. Generally these are increasingly downstream of the CO headwaters near Grand Lake. 
 colorado <- tibble(sites=c('USGS-09034500','USGS-09069000'),
@@ -167,7 +166,7 @@ We also need to download some site info so we can know where these sites are.
 
 site.info <- whatWQPsites(siteid=colorado$sites) %>%
   dplyr::select(SiteID=MonitoringLocationIdentifier,
-                  name=MonitoringLocationName
+                  name=MonitoringLocationName,
                   area=DrainageAreaMeasure.MeasureValue,
                   area.units=DrainageAreaMeasure.MeasureUnitCode,
                   lat=LatitudeMeasure,
@@ -208,7 +207,7 @@ Wow that looks messy! Lots of extraneous columns, lots of NAs, so much informati
 
 ```{r tidying up concentration}
 #This code mostly just grabs and renames the most important data columns
-conc.clean <-  conc.long 
+conc.clean <-  conc.long %>%
                   dplyr::select(date=ActivityStartDate,
                          parameter=CharacteristicName,
                          units=ResultMeasure.MeasureUnitCode,
@@ -227,7 +226,7 @@ conc.clean <-  conc.long
                          fraction=ResultSampleFractionText,
                          status=ResultStatusIdentifier) %>%
   #Remove trailing white space in labels
-  mutate(units = trimws(units) %>%
+  mutate(units = trimws(units)) %>%
   #Keep only samples that are water samples
   filter(media=='Water') #Some of these snuck through!
 
@@ -238,7 +237,7 @@ Now let's look at the tidier version
 head(conc.clean) %>%
   kable(.,'html') %>%
   kable_styling() %>%
-  scroll_box(width='800px'',height='300px')
+  scroll_box(width='800px',height='300px')
 ```
 
 ## Final tidy dataset
@@ -257,7 +256,7 @@ We just need to remove these observations with a `dplyr::filter` call and then s
 
 ```{r tidy}
 conc.tidy <- conc.clean %>% 
-  filter(units == 'tons/day') %>%
+  filter(units == 'mg/l') %>%
   mutate(date=ymd(date)) %>%
   select(date,
          parameter,
@@ -297,7 +296,7 @@ Here we use the `sf` package to project the site information data into a GIS typ
 ```{r}
 #convert site info as an sf object
 site.sf <- site.info %>%
-  st_as_sf(., coords=c('long','lat')
+  st_as_sf(., coords=c('long','lat'), crs = 4326)
 
 
 mapview(site.sf)
@@ -336,7 +335,7 @@ Let's shrink the dataset to only look at annual change.
 conc.annual <- conc.daily %>%
   mutate(year=year(date)) %>%
   group_by(SiteID,year,parameter) %>%
-  summarize(annual_mean=mean(conc_median,na.rm=T),
+  summarize(annual_mean=mean(conc_mean,na.rm=T),
             annual_var=var(conc_mean,na.rm=T))
   
 
@@ -364,9 +363,9 @@ conc.annual %>%
   left_join(colorado %>%
               rename(SiteID=sites),by='SiteID') %>%
   ggplot(.,aes(x=year,y=annual_mean,color=basin)) + 
-  geom_points() + 
+  geom_point() + 
   facet_wrap(~parameter, scales='free') + 
-  theme_fews() + 
+  theme_few() + 
   scale_color_few() + 
   theme(legend.position=c(.7,.15)) + 
   guides(color=guide_legend(ncol=2))
@@ -383,7 +382,7 @@ conc.annual %>%
   filter(annual_var < 5000) %>%
   ggplot(.,aes(x=year,y=annual_var,color=area)) + 
   geom_point() + 
-  facet_wraps(~parameter,scales='free') + 
+  facet_wrap(~parameter,scales='free') + 
   theme_few() + 
   theme(legend.position=c(.7,.15)) 
 ```
